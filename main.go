@@ -1,12 +1,16 @@
 package main
 
 import (
+	"image"
+	"image/color"
+	"image/png"
 	"math"
-	"rand"
+	"math/rand"
 	"flag"
 	"strconv"
 	"fmt"
 	"os"
+	"time"
 )
 
 type Vec struct {
@@ -179,8 +183,8 @@ func Clamp(x float64) float64 {
 	return x
 }
 
-func ToByte(x float64) byte {
-	return byte(math.Pow(Clamp(x), 1/2.2) * 255 + 0.5)
+func ToByte(x float64) uint8 {
+	return uint8(math.Pow(Clamp(x), 1/2.2) * 255 + 0.5)
 }
 
 func Intersect(ray *Ray, t *float64, id *int) bool {
@@ -235,7 +239,7 @@ func Radiance(ray *Ray, depth int) Vec {
 		r2s = math.Sqrt(r2)
 		var w, u, v, d Vec
 		w = nl
-		if math.Fabs(w.x) > 0.1 {
+		if math.Abs(w.x) > 0.1 {
 			u = Vec{0.0, 1.0, 0.0}
 		} else {
 			u = Vec{1.0, 0.0, 0.0}
@@ -290,7 +294,7 @@ func Radiance(ray *Ray, depth int) Vec {
 		Radiance(&Ray{x, tdir}, depth+1)), Tr)))
 }
 
-var w, h, samps int = 1024, 768, 1
+var w, h, samps int = 800, 600, 5
 var cam *Ray
 var colors []Vec
 
@@ -326,6 +330,7 @@ func renderPixel(x int, y int, cx Vec, cy Vec) {
 
 func main() {
 	flag.Parse()
+	start := time.Now().Second()
 	var cx, cy Vec
 	cam = &Ray{Vec{50,52,295.6}, Norm(Vec{0, -0.042612, -1})}
 	colors = make([]Vec, h*w)
@@ -336,16 +341,45 @@ func main() {
 	cx = Vec{float64(w) * 0.5135 / float64(h), 0.0, 0.0}
 	cy = SMul(Norm(Cross(cx, cam.Direction)), 0.5135)
 	for y := 0; y < h; y++ {
-		fmt.Printf("\rRendering (%d spp) %5.2f",samps*4,100.*float(y)/(float(h)-1.0));
+		fmt.Printf("\rRendering (%d spp) %5.2f%%",samps*4,(100.0*float64(y))/(float64(h)-1.0));
 		for x := 0; x < w; x++ {
 			renderPixel(x, y, cx, cy)
 		}
 	}
+	end := time.Now().Second()
 
-	f, _ := os.Open("image.ppm", os.O_CREAT|os.O_WRONLY|os.O_TRUNC, 0666)
+	/*
+	f, err := os.Create("image.ppm")
+	if err != nil {
+		panic(err)
+	}
 	f.WriteString(fmt.Sprintf("P3\n%d %d\n%d\n", w, h, 255))
 	for _, color := range colors {
 		f.WriteString(fmt.Sprintf("%d %d %d ", ToByte(color.x), ToByte(color.y), ToByte(color.z)))
 	}
 	f.Close()
+	*/
+
+	err := SavePNG(colors)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("\nDone! %ds", end-start)
+}
+
+func SavePNG(c []Vec) error {
+	img := image.NewRGBA(image.Rectangle{image.Point{0, 0}, image.Point{w, h}})
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{ToByte(c[y*w+x].x), ToByte(c[y*w+x].y), ToByte(c[y*w+x].z), 255})
+		}
+	}
+	name := time.Now().Format("2006-01-02 15-04")
+	f, err := os.Create(fmt.Sprintf("/img/%s [%d].png", name, 4*samps))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
 }
